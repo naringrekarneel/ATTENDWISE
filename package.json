@@ -9,9 +9,13 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "typescript": "^7.0.2",
     "vite": "^8.1.1"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
     "chart.js": "^4.5.1",
     "dexie": "^4.4.4",
     "uuid": "^14.0.1"

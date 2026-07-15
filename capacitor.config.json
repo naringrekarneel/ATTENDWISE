@@ -1,0 +1,8 @@
+﻿{
+    "appId":  "com.attendwise.app",
+    "appName":  "AttendWise",
+    "webDir":  "dist",
+    "server":  {
+                   "androidScheme":  "https"
+               }
+}
