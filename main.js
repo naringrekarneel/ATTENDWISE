@@ -113,18 +113,46 @@ async function renderSubjects() {
   });
 }
 
-if (addSubjectBtn) {
-  addSubjectBtn.addEventListener('click', async () => {
-    const name = prompt("Enter Subject Name:");
-    if (!name) return;
-    
-    const targetStr = prompt("Enter Target Attendance % (e.g., 75):", "75");
-    const target = parseInt(targetStr) || 75;
-    
+const subjectModal = document.getElementById('subject-modal');
+const modalCancelBtn = document.getElementById('modal-cancel-btn');
+const modalSaveBtn = document.getElementById('modal-save-btn');
+const modalSubjName = document.getElementById('modal-subject-name');
+const modalSubjTarget = document.getElementById('modal-subject-target');
+const modalSubjColor = document.getElementById('modal-subject-color');
+
+if (addSubjectBtn && subjectModal) {
+  addSubjectBtn.addEventListener('click', () => {
+    // Reset fields
+    modalSubjName.value = '';
+    modalSubjTarget.value = '75';
+    // Select a random color by default
     const colors = ['#0061a4', '#4caf50', '#ff9800', '#e91e63', '#9c27b0'];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    modalSubjColor.value = colors[Math.floor(Math.random() * colors.length)];
     
-    await addSubject('default-semester', name, 'TBA', target, randomColor, 3);
+    subjectModal.style.display = 'flex';
+    modalSubjName.focus();
+  });
+}
+
+if (modalCancelBtn && subjectModal) {
+  modalCancelBtn.addEventListener('click', () => {
+    subjectModal.style.display = 'none';
+  });
+}
+
+if (modalSaveBtn && subjectModal) {
+  modalSaveBtn.addEventListener('click', async () => {
+    const name = modalSubjName.value.trim();
+    if (!name) {
+      alert("Please enter a subject name.");
+      modalSubjName.focus();
+      return;
+    }
+    const target = parseInt(modalSubjTarget.value) || 75;
+    const color = modalSubjColor.value || '#0061a4';
+
+    await addSubject('default-semester', name, 'TBA', target, color, 3);
+    subjectModal.style.display = 'none';
     renderSubjects();
   });
 }
