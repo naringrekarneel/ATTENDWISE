@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#121212" />
+    <title>AttendWise Web</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <div id="app">
+      <!-- App Bar -->
+      <header class="app-bar">
+        <h1>AttendWise</h1>
+        <button class="icon-btn" id="theme-toggle" aria-label="Toggle Theme">
+          <span class="material-symbols-outlined">light_mode</span>
+        </button>
+      </header>
+
+      <!-- Main Content -->
+      <main class="content-area">
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view active">
+          <header class="dashboard-header">
+            <h2 class="greeting">Hello, Student!</h2>
+            <p class="date" id="current-date">Today</p>
+          </header>
+
+          <div class="attendance-card premium-glass">
+            <div class="card-content">
+              <h3>Overall Attendance</h3>
+              <div class="percentage">78%</div>
+            </div>
+            <div class="card-icon">
+              <span class="material-symbols-outlined">verified</span>
+            </div>
+          </div>
+
+          <div class="insight-card">
+            <span class="material-symbols-outlined insight-icon">lightbulb</span>
+            <p>You can safely miss <strong>2 more DBMS lectures</strong> this week.</p>
+          </div>
+
+          <div class="schedule-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 id="schedule-title" style="margin: 0;">Today's Schedule</h3>
+              <input type="date" id="dashboard-date-picker" class="dashboard-date-picker" />
+            </div>
+            <div class="schedule-list">
+              <div class="schedule-item">
+                <div class="time">09:00 AM</div>
+                <div class="details">
+                  <h4>Database Management (DBMS)</h4>
+                  <p>Prof. Smith • Room 302</p>
+                </div>
+                <div class="status-indicator upcoming"></div>
+              </div>
+              <div class="schedule-item active-class">
+                <div class="time">10:30 AM</div>
+                <div class="details">
+                  <h4>Cloud Computing</h4>
+                  <p>Prof. Johnson • Lab 4</p>
+                </div>
+                <div class="status-indicator active"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subjects View -->
+        <div id="subjects-view" class="view" style="display: none;">
+          <header class="dashboard-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h2 class="greeting">Subjects</h2>
+              <p class="date">Manage your coursework</p>
+            </div>
+            <button id="add-subject-btn" class="icon-btn" style="background: var(--primary-color); color: white;">
+              <span class="material-symbols-outlined">add</span>
+            </button>
+          </header>
+          <div id="subjects-list" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Subjects will be rendered here dynamically -->
+          </div>
+        </div>
+        
+        <!-- Timetable View -->
+        <div id="timetable-view" class="view" style="display: none;">
+          <header class="dashboard-header">
+            <h2 class="greeting">Timetable</h2>
+            <p class="date">Manual Timetable Builder</p>
+          </header>
+          
+          <div class="insight-card" style="flex-direction: column; align-items: stretch; margin-top: 1rem;">
+            <p style="margin-bottom: 1rem; font-size: 0.85rem;">Click any cell to type subjects. Use the toolbar to merge cells for multi-hour labs.</p>
+            
+            <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
+              <label for="timetable-start-date" style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">Semester Start:</label>
+              <input type="date" id="timetable-start-date" class="dashboard-date-picker" style="margin-right: auto;" />
+              
+              <button id="add-row-btn" style="background: var(--surface-color); color: var(--text-primary); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 0.8rem;">
+                <span class="material-symbols-outlined" style="font-size: 1.1rem;">add</span> Add Slot
+              </button>
+              <button id="remove-row-btn" style="background: var(--surface-color); color: var(--text-primary); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 0.8rem;">
+                <span class="material-symbols-outlined" style="font-size: 1.1rem;">remove</span> Remove Slot
+              </button>
+              <div style="width: 1px; background: var(--border-color); margin: 0 4px;"></div>
+              <button id="merge-down-btn" style="background: var(--surface-color); color: var(--text-primary); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 0.8rem;">
+                <span class="material-symbols-outlined" style="font-size: 1.1rem;">arrow_downward</span> Merge Cell Down
+              </button>
+              <button id="undo-merge-btn" style="background: var(--surface-color); color: var(--text-primary); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 0.8rem;">
+                <span class="material-symbols-outlined" style="font-size: 1.1rem;">call_split</span> Undo Merge
+              </button>
+            </div>
+            
+            <div style="overflow-x: auto; background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 1rem;">
+              <table id="manual-table" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 0.75rem;">
+                <!-- Generated by JS -->
+              </table>
+            </div>
+            
+            <button id="save-manual-timetable-btn" style="background: var(--primary-color); color: white; padding: 12px; border: none; border-radius: 16px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+              <span class="material-symbols-outlined">save</span> Save Timetable
+            </button>
+          </div>
+          
+          <div id="saved-timetables-list" style="margin-top: 2rem;">
+            <h3 style="margin-bottom: 1rem; font-size: 1rem;">Saved Timetables</h3>
+            <div id="timetables-container" style="display: flex; flex-direction: column; gap: 1rem;"></div>
+          </div>
+        </div>
+        
+        <!-- History View (Interactive Calendar) -->
+        <div id="history-view" class="view" style="display: none;">
+          <header class="dashboard-header">
+            <h2 class="greeting">History</h2>
+            <p class="date">Interactive Calendar</p>
+          </header>
+          
+          <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; padding-bottom: 2rem; width: 100%; box-sizing: border-box;">
+             <!-- Calendar Widget -->
+             
+             <!-- Month Selector Outside -->
+             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; padding: 0 8px;">
+               <button id="cal-prev-btn" style="background: none; border: none; font-size: 1.8rem; cursor: pointer; color: var(--text-primary); padding: 4px;">&lsaquo;</button>
+               <h3 id="cal-month-year" style="margin: 0; font-size: 1.1rem; color: var(--text-primary); font-weight: bold;">Month Year</h3>
+               <button id="cal-next-btn" style="background: none; border: none; font-size: 1.8rem; cursor: pointer; color: var(--text-primary); padding: 4px;">&rsaquo;</button>
+             </div>
+             
+             <!-- Blue Box containing Week/Days -->
+             <div class="insight-card" style="padding: 16px 8px; width: 100%; box-sizing: border-box; flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 0;">
+               <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
+                 <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+               </div>
+               
+               <div id="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center;">
+                 <!-- Populated by JS -->
+               </div>
+             </div>
+             
+             <!-- Selected Date Details Panel -->
+             <div id="day-details-container">
+               <!-- Populated by JS -->
+               <p style="text-align: center; color: var(--text-secondary); margin-top: 2rem;">Select a date to view classes.</p>
+             </div>
+          </div>
+        </div>
+        
+        <!-- Analytics View -->
+        <div id="analytics-view" class="view" style="display: none;">
+          <header class="dashboard-header">
+            <h2 class="greeting">Analytics</h2>
+            <p class="date">Performance breakdown</p>
+          </header>
+          
+          <div class="analytics-dashboard">
+            <!-- Metrics Cards Row -->
+            <div class="metrics-row">
+              <div class="metric-card-modern">
+                <div class="metric-card-icon">
+                  <span class="material-symbols-outlined">percent</span>
+                </div>
+                <div class="metric-card-info">
+                  <h4>Overall Attendance</h4>
+                  <div class="value" id="analytics-overall-percent">0%</div>
+                </div>
+              </div>
+              
+              <div class="metric-card-modern" id="analytics-bunk-card">
+                <div class="metric-card-icon" id="analytics-bunk-icon-container">
+                  <span class="material-symbols-outlined" id="analytics-bunk-icon">check_circle</span>
+                </div>
+                <div class="metric-card-info">
+                  <h4 id="analytics-bunk-title">Bunks Remaining</h4>
+                  <div class="value" id="analytics-bunk-value">0</div>
+                </div>
+              </div>
+
+              <div class="metric-card-modern">
+                <div class="metric-card-icon">
+                  <span class="material-symbols-outlined">schedule</span>
+                </div>
+                <div class="metric-card-info">
+                  <h4>Lectures Remaining</h4>
+                  <div class="value" id="analytics-remaining-value">0</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subject breakdown stats -->
+            <div class="subjects-stats-card">
+              <h3>Subject-wise Breakdown</h3>
+              <div style="overflow-x: auto;">
+                <table class="stat-table-modern">
+                  <thead>
+                    <tr>
+                      <th style="padding: 12px 16px;">Subject</th>
+                      <th style="padding: 12px 16px;">Attended</th>
+                      <th style="padding: 12px 16px;">Total</th>
+                      <th style="padding: 12px 16px;">Progress</th>
+                      <th style="padding: 12px 16px;">Percentage</th>
+                      <th style="padding: 12px 16px;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analytics-subject-breakdown-body">
+                    <!-- Populated by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-row-modern">
+              <div class="chart-card-modern">
+                <div class="chart-card-header">
+                  <h3>Weekly Attendance Trend</h3>
+                </div>
+                <div style="height: 250px; position: relative;">
+                  <canvas id="weekly-bar-chart"></canvas>
+                </div>
+              </div>
+              
+              <div class="chart-card-modern">
+                <div class="chart-card-header">
+                  <h3>Monthly Distribution</h3>
+                </div>
+                <div style="height: 250px; position: relative; display: flex; justify-content: center; align-items: center;">
+                  <canvas id="monthly-donut-chart" style="max-height: 220px; max-width: 220px;"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Weekly/Monthly Detailed Tables -->
+            <div class="charts-row-modern">
+              <div class="chart-card-modern">
+                <div class="chart-card-header">
+                  <h3>Weekly Summary</h3>
+                </div>
+                <div style="overflow-x: auto;">
+                  <table class="stat-table-modern" id="analytics-week-table">
+                    <!-- Populated by JS -->
+                  </table>
+                </div>
+              </div>
+
+              <div class="chart-card-modern">
+                <div class="chart-card-header">
+                  <h3>Monthly Summary</h3>
+                </div>
+                <div style="overflow-x: auto;">
+                  <table class="stat-table-modern" id="analytics-month-table">
+                    <!-- Populated by JS -->
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </main>
+
+      <!-- Bottom Navigation -->
+      <nav class="bottom-nav">
+        <button class="nav-item active" data-target="dashboard-view">
+          <span class="material-symbols-outlined">home</span>
+          <span>Home</span>
+        </button>
+        <button class="nav-item" data-target="subjects-view">
+          <span class="material-symbols-outlined">book</span>
+          <span>Subjects</span>
+        </button>
+        <button class="nav-item" data-target="timetable-view">
+          <span class="material-symbols-outlined">calendar_month</span>
+          <span>Timetable</span>
+        </button>
+        <button class="nav-item" data-target="history-view">
+          <span class="material-symbols-outlined">fact_check</span>
+          <span>History</span>
+        </button>
+        <button class="nav-item" data-target="analytics-view">
+          <span class="material-symbols-outlined">insights</span>
+          <span>Analytics</span>
+        </button>
+      </nav>
+    </div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
