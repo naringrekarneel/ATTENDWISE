@@ -171,3 +171,9 @@ export async function generateDemoData() {
   await addSubject(semId, 'Cloud Computing', 'Prof. Johnson', 75, '#4caf50', 3);
   await addSubject(semId, 'Machine Learning', 'Prof. Davis', 75, '#ff9800', 4);
 }
+  
+export async function wipeAppClean() {  
+  await db.timetables.clear();  
+  await db.lectureRecords.clear();  
+  await db.subjects.clear();  
+} 

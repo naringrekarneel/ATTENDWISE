@@ -1,4 +1,4 @@
-import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable } from './db.js';
+import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean } from './db.js';
 import { AttendanceEngine, SchedulerEngine, HistoryEngine, AnalyticsEngine } from './engine.js';
 import Chart from 'chart.js/auto';
 
@@ -364,14 +364,26 @@ if (removeRowBtn) {
   });
 }
 
-if (saveManualTimetableBtn) {
-  saveManualTimetableBtn.addEventListener('click', async () => {
-    // Extract logical state into simple grid format for the DB
-    const gridData = manualGrid.map(row => 
-      row.filter(c => !c.hidden).map(c => `${c.text}${c.rowSpan > 1 ? ` [${c.rowSpan} Hrs]` : ''}`)
-    );
-    
-    const startDateInput = document.getElementById('timetable-start-date');
+  if (saveManualTimetableBtn) {
+    saveManualTimetableBtn.addEventListener('click', async () => {
+      // Extract logical state into simple grid format for the DB, preserving columns
+      const gridData = manualGrid.map(row => row.map(c => ''));
+      for (let r = 0; r < manualGrid.length; r++) {
+        for (let c = 0; c < manualGrid[r].length; c++) {
+          if (!manualGrid[r][c].hidden) {
+            const cell = manualGrid[r][c];
+            const textToSave = `${cell.text}${cell.rowSpan > 1 ? ` [${cell.rowSpan} Hrs]` : ''}`;
+            // Expand the text into merged slots so engine.js gets every hour
+            for (let span = 0; span < cell.rowSpan; span++) {
+               if (r + span < gridData.length) {
+                 gridData[r + span][c] = textToSave;
+               }
+            }
+          }
+        }
+      }
+      
+      const startDateInput = document.getElementById('timetable-start-date');
     const startDate = startDateInput && startDateInput.value ? startDateInput.value : null;
     
     await addTimetable('default-semester', 'Manual Timetable', gridData, startDate);
@@ -435,14 +447,14 @@ async function renderSavedTimetables() {
   });
   
   // Attach delete handlers
-  document.querySelectorAll('.delete-timetable-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      if (confirm("Are you sure you want to delete this timetable?")) {
-        await deleteTimetable(e.currentTarget.dataset.id);
-        renderSavedTimetables();
-      }
+    document.querySelectorAll('.delete-timetable-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        if (confirm("Are you sure you want to delete this timetable? This will permanently wipe all your subjects and attendance history!")) {
+          await wipeAppClean();
+          window.location.reload();
+        }
+      });
     });
-  });
 }
 
 // ==========================================
@@ -459,8 +471,16 @@ async function renderDashboard(dateString = null) {
   const insights = await AttendanceEngine.generateDashboardInsights(dateString);
   
   // Update UI Elements
-  const percentageEl = document.querySelector('.percentage');
-  const insightTextEl = document.querySelector('.insight-card p');
+    const dateElement = document.getElementById('current-date');
+    if (dateElement) {
+      const [y, m, d] = dateString.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      const options = { weekday: 'short', month: 'short', day: 'numeric' };
+      dateElement.textContent = dateObj.toLocaleDateString('en-US', options);
+    }
+    
+    const percentageEl = document.querySelector('.percentage');
+    const insightTextEl = document.querySelector('.insight-card p');
   const scheduleListEl = document.querySelector('.schedule-list');
   const datePickerEl = document.getElementById('dashboard-date-picker');
   
