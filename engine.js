@@ -1,4 +1,4 @@
-import { db, getTimetables, addLectureRecord, getLecturesByDate, clearLectureRecords, bulkAddLectureRecords, getAllLectureRecords, getSubjects } from './db.js';
+import { db, getTimetables, addLectureRecord, getLecturesByDate, clearLectureRecords, bulkAddLectureRecords, getAllLectureRecords, getSubjects, deleteFuturePendingRecords } from './db.js';
 
 /**
  * Attendance Engine
@@ -52,14 +52,22 @@ export class AttendanceEngine {
  * Runs automatically on app start. Generates daily LectureRecords based on Timetable.
  */
 export class SchedulerEngine {
-  static async generateScheduleFromTimetable(gridData, effectiveFrom = null, effectiveUntil = null) {
-    // Clear old data when a new timetable is saved
-    await clearLectureRecords();
+  static async generateScheduleFromTimetable(gridData, effectiveFrom = null, effectiveUntil = null, mode = 'wipe') {
+    if (mode === 'wipe') {
+      // Clear old data when a new timetable is saved completely fresh
+      await clearLectureRecords();
+    } else {
+      // Continue mode: only delete future pending records starting from effective date
+      if (!effectiveFrom) {
+         effectiveFrom = new Date().toISOString().split('T')[0];
+      }
+      await deleteFuturePendingRecords(effectiveFrom);
+    }
     
     const newRecords = [];
     const daysMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
     
-    let startDiff = 30; // default start
+    let startDiff = mode === 'wipe' ? 30 : 0; // default start
     let endDiff = -120; // default end (4 months future)
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -101,6 +109,14 @@ export class SchedulerEngine {
           if (subject && subject.trim() !== '') {
              // Clean up the text (remove [2 Hrs] tag)
              let cleanSubject = subject.replace(/\[\d+\s*Hrs\]/ig, '').trim();
+             
+             let room = null;
+             const roomMatch = cleanSubject.match(/(.*?)\s*(?:\(([^)]+)\)|\|\s*(.*))$/);
+             if (roomMatch) {
+               cleanSubject = roomMatch[1].trim();
+               room = (roomMatch[2] || roomMatch[3]).trim();
+             }
+             
              let upperSubj = cleanSubject.toUpperCase();
              
              // Ignore breaks and empty subjects
@@ -114,6 +130,7 @@ export class SchedulerEngine {
                id: crypto.randomUUID(),
                subjectId: 'parsed',
                name: cleanSubject,
+               room: room,
                time: time,
                faculty: 'TBA',
                date: dateString,
@@ -181,6 +198,14 @@ export class SchedulerEngine {
          let subject = active.gridData[r][colIndex];
          if (subject && subject.trim() !== '') {
             let cleanSubject = subject.replace(/\[\d+\s*Hrs\]/ig, '').trim();
+            
+            let room = null;
+            const roomMatch = cleanSubject.match(/(.*?)\s*(?:\(([^)]+)\)|\|\s*(.*))$/);
+            if (roomMatch) {
+              cleanSubject = roomMatch[1].trim();
+              room = (roomMatch[2] || roomMatch[3]).trim();
+            }
+            
             let upperSubj = cleanSubject.toUpperCase();
             if (upperSubj === 'BREAK' || upperSubj === 'LUNCH' || upperSubj === 'RECESS' || cleanSubject === '') continue;
             
@@ -195,6 +220,7 @@ export class SchedulerEngine {
               date: dateString,
               time: time,
               name: cleanSubject,
+              room: room,
               faculty: "TBA",
               status: 'pending'
             });
@@ -305,87 +331,111 @@ export class HistoryEngine {
 }
 
 export class AnalyticsEngine {
-  static async getAnalyticsData() {
+  static async getAnalyticsData(targetMonthKey = null) {
     const allRecords = await getAllLectureRecords();
     const subjects = await getSubjects('default-semester');
     
     // Config
-    const assumedTotalSemester = 120; // Used for "Lectures Remaining" (4 weeks * ~30 lectures)
+    const assumedTotalSemester = 120; // Used for "Lectures Remaining"
     const target = 0.75; // 75% target
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     
-    // Sort into 4 weeks based on age of the record
-    const today = new Date();
-    today.setHours(0,0,0,0);
+    // 1. Find all available months that have data
+    const availableMonthsSet = new Set();
+    allRecords.forEach(r => {
+      if (r.status === 'present' || r.status === 'absent') {
+        const d = new Date(r.date + "T00:00:00");
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        availableMonthsSet.add(key);
+      }
+    });
     
-    const weeklyData = [
-      { week: 1, attended: 0, total: 0 },
-      { week: 2, attended: 0, total: 0 },
-      { week: 3, attended: 0, total: 0 },
-      { week: 4, attended: 0, total: 0 },
-    ];
+    let availableMonths = Array.from(availableMonthsSet).sort(); // chronological sort
+    
+    // If no data at all, just use current month
+    if (availableMonths.length === 0) {
+      const now = new Date();
+      availableMonths = [`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`];
+    }
+    
+    // 2. Determine target month
+    let activeKey = targetMonthKey;
+    if (!activeKey || !availableMonths.includes(activeKey)) {
+      activeKey = availableMonths[availableMonths.length - 1]; // default to most recent
+    }
+    
+    const [targetYearStr, targetMonthStr] = activeKey.split('-');
+    const targetYear = parseInt(targetYearStr);
+    const targetMonth = parseInt(targetMonthStr) - 1;
+    const currentMonthName = `${monthNames[targetMonth]} ${targetYear}`;
+    
+    // 3. Setup Weekly Buckets for Target Month
+    const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const numWeeks = Math.ceil(daysInMonth / 7);
+    
+    const weeklyData = [];
+    for (let i = 1; i <= numWeeks; i++) {
+      weeklyData.push({ week: i, attended: 0, total: 0 });
+    }
+    
+    let overallAttended = 0;
+    let overallTotal = 0;
+    let monthlyAttended = 0;
+    let monthlyTotal = 0;
     
     allRecords.forEach(r => {
       if (r.status === 'present' || r.status === 'absent') {
-         const d = new Date(r.date);
-         const diffTime = Math.abs(today - d);
-         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+         // Overall Tracker
+         overallTotal++;
+         if (r.status === 'present') overallAttended++;
          
-         // 4 most recent weeks (1-7 days, 8-14, 15-21, 22-28)
-         if (diffDays <= 7 && diffDays > 0) {
-            weeklyData[3].total++; 
-            if (r.status === 'present') weeklyData[3].attended++;
-         } else if (diffDays <= 14 && diffDays > 7) {
-            weeklyData[2].total++;
-            if (r.status === 'present') weeklyData[2].attended++;
-         } else if (diffDays <= 21 && diffDays > 14) {
-            weeklyData[1].total++;
-            if (r.status === 'present') weeklyData[1].attended++;
-         } else if (diffDays <= 28 && diffDays > 21) {
-            weeklyData[0].total++; 
-            if (r.status === 'present') weeklyData[0].attended++;
+         // Monthly Tracker
+         const d = new Date(r.date + "T00:00:00");
+         if (d.getMonth() === targetMonth && d.getFullYear() === targetYear) {
+            monthlyTotal++;
+            if (r.status === 'present') monthlyAttended++;
+            
+            const dayOfMonth = d.getDate();
+            const weekIndex = Math.ceil(dayOfMonth / 7) - 1;
+            
+            if (weeklyData[weekIndex]) {
+               weeklyData[weekIndex].total++;
+               if (r.status === 'present') weeklyData[weekIndex].attended++;
+            }
          }
       }
     });
     
-    // Calculate Percentages
     weeklyData.forEach(w => {
        w.percentage = w.total > 0 ? (w.attended / w.total) * 100 : 0;
     });
     
-    // Calculate Monthly Stats
-    let monthlyAttended = 0;
-    let monthlyTotal = 0;
-    weeklyData.forEach(w => {
-       monthlyAttended += w.attended;
-       monthlyTotal += w.total;
-    });
-    let monthlyPercentage = monthlyTotal > 0 ? (monthlyAttended / monthlyTotal) * 100 : 0;
+    let overallPercentage = overallTotal > 0 ? (overallAttended / overallTotal) * 100 : 0;
     
-    // Lectures you have to seat formula
     let requiredToSeat = 0;
-    
-    if (monthlyPercentage >= 75) {
-       // Safe bunks
-       let safeBunks = Math.floor((monthlyAttended / target) - monthlyTotal);
+    if (overallPercentage >= 75) {
+       let safeBunks = Math.floor((overallAttended / target) - overallTotal);
        requiredToSeat = -safeBunks; 
     } else {
-       // Must attend
-       let mustAttend = Math.ceil((target * monthlyTotal - monthlyAttended) / (1 - target));
+       let mustAttend = Math.ceil((target * overallTotal - overallAttended) / (1 - target));
        requiredToSeat = mustAttend;
     }
     
-    let lectureRemaining = assumedTotalSemester - monthlyTotal;
+    let lectureRemaining = assumedTotalSemester - overallTotal;
     if (lectureRemaining < 0) lectureRemaining = 0;
     
-    // Subject-wise breakdown
+    // Subject-wise breakdown (FILTERED BY MONTH)
     const subjectStats = subjects.map(sub => {
       const subNameUpper = sub.name.toUpperCase();
       let attended = 0;
       let total = 0;
       allRecords.forEach(r => {
          if (r.name.toUpperCase() === subNameUpper && (r.status === 'present' || r.status === 'absent')) {
-            total++;
-            if (r.status === 'present') attended++;
+            const d = new Date(r.date + "T00:00:00");
+            if (d.getMonth() === targetMonth && d.getFullYear() === targetYear) {
+               total++;
+               if (r.status === 'present') attended++;
+            }
          }
       });
       const percentage = total > 0 ? (attended / total) * 100 : 0;
@@ -400,11 +450,20 @@ export class AnalyticsEngine {
       };
     });
     
+    // Map availableMonths to formatted labels for the UI
+    const availableMonthsFormatted = availableMonths.map(key => {
+       const [y, m] = key.split('-');
+       return { key, label: `${monthNames[parseInt(m)-1]} ${y}` };
+    });
+    
     return {
+       availableMonths: availableMonthsFormatted,
+       activeMonthKey: activeKey,
+       currentMonthName,
        weeklyData,
-       monthlyAttended,
-       monthlyTotal,
-       monthlyPercentage,
+       overallPercentage,
+       overallAttended,
+       overallTotal,
        requiredToSeat,
        lectureRemaining,
        subjectStats

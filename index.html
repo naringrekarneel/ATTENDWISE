@@ -101,7 +101,7 @@
           </header>
           
           <div class="insight-card" style="flex-direction: column; align-items: stretch; margin-top: 1rem;">
-            <p style="margin-bottom: 1rem; font-size: 0.85rem;">Click any cell to type subjects. Use the toolbar to merge cells for multi-hour labs.</p>
+            <p style="margin-bottom: 1rem; font-size: 0.85rem;">Click any cell to type subjects. Use the toolbar to merge cells for multi-hour labs.<br><br><strong>Pro Tip:</strong> Type a room number after a pipe, like <code>Maths | 302</code></p>
             
             <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
                 <label for="timetable-start-date" style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">Semester Start:</label>
@@ -245,11 +245,22 @@
               </div>
             </div>
 
+            <!-- Month Chooser slider -->
+            <div class="month-chooser-container">
+              <button class="icon-btn-modern" id="month-prev-btn"><span class="material-icons">chevron_left</span></button>
+              <div class="month-chooser-window">
+                <div class="month-chooser-slider" id="month-chooser-slider">
+                  <span id="month-chooser-label" class="month-chooser-label">Loading...</span>
+                </div>
+              </div>
+              <button class="icon-btn-modern" id="month-next-btn"><span class="material-icons">chevron_right</span></button>
+            </div>
+
             <!-- Charts Section -->
             <div class="charts-row-modern">
               <div class="chart-card-modern">
                 <div class="chart-card-header">
-                  <h3>Weekly Attendance Trend</h3>
+                  <h3 id="analytics-weekly-title">Weekly Attendance Trend</h3>
                 </div>
                 <div style="height: 250px; position: relative;">
                   <canvas id="weekly-bar-chart"></canvas>
@@ -346,6 +357,36 @@
         <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 1rem; width: 100%;">
           <button id="modal-cancel-btn" style="background: transparent; border: 1px solid var(--border-color); padding: 10px 18px; border-radius: 12px; color: var(--text-primary); cursor: pointer; font-family: inherit; font-size: 0.9rem; font-weight: 600;">Cancel</button>
           <button id="modal-save-btn" style="background: var(--primary-color); border: none; padding: 10px 18px; border-radius: 12px; color: white; cursor: pointer; font-family: inherit; font-size: 0.9rem; font-weight: 600;">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timetable Save Options Modal -->
+    <div id="timetable-save-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-content premium-glass">
+        <h2 style="margin-bottom: 0.5rem; font-size: 1.5rem;">Timetable Change Detected</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5;">
+          You already have attendance data in your records. How would you like to save this new timetable?
+        </p>
+        
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <button id="modal-save-wipe-btn" style="background: rgba(234, 67, 53, 0.1); border: 1px solid #ea4335; padding: 14px; border-radius: 12px; color: #ea4335; cursor: pointer; text-align: left;">
+            <div style="font-weight: 700; font-size: 1.05rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+              <span class="material-icons" style="font-size: 1.2rem;">delete_forever</span> Wipe Slate Clean
+            </div>
+            <div style="font-size: 0.85rem;">Delete all past attendance history and start completely fresh from day one.</div>
+          </button>
+
+          <button id="modal-save-continue-btn" style="background: var(--primary-color); border: none; padding: 14px; border-radius: 12px; color: white; cursor: pointer; text-align: left;">
+            <div style="font-weight: 700; font-size: 1.05rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+              <span class="material-icons" style="font-size: 1.2rem;">fast_forward</span> Continue from Date
+            </div>
+            <div style="font-size: 0.85rem;">Keep all past attendance intact. Stitch this new timetable onto your records starting from the selected Semester Start Date.</div>
+          </button>
+          
+          <button id="modal-save-cancel-btn" style="background: transparent; border: 1px solid var(--border-color); padding: 12px; border-radius: 12px; color: var(--text-primary); cursor: pointer; font-weight: 600; text-align: center; margin-top: 0.5rem;">
+            Cancel
+          </button>
         </div>
       </div>
     </div>

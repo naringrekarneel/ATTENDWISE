@@ -1,4 +1,4 @@
-import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean } from './db.js';
+import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean, getAllLectureRecords } from './db.js';
 import { AttendanceEngine, SchedulerEngine, HistoryEngine, AnalyticsEngine } from './engine.js';
 import Chart from 'chart.js/auto';
 import { Clipboard } from '@capacitor/clipboard';
@@ -390,18 +390,51 @@ if (removeRowBtn) {
       const endDateInput = document.getElementById('timetable-end-date');
       const endDate = endDateInput && endDateInput.value ? endDateInput.value : null;
       
-      await addTimetable('default-semester', 'Manual Timetable', gridData, startDate, endDate);
+      const executeSave = async (mode) => {
+         await addTimetable('default-semester', 'Manual Timetable', gridData, startDate, endDate);
+         
+         // Core Pipeline: Parse the grid and generate all history & future records!
+         await SchedulerEngine.generateScheduleFromTimetable(gridData, startDate, endDate, mode);
+       
+         // Auto-sync Subjects: Discover new subjects and add to Subjects DB!
+         await syncSubjectsFromTimetable(gridData);
+         initBlankGrid(); 
+         renderSavedTimetables();
+         
+         // Navigate them to history to see their generated data
+         document.querySelector('.nav-item[data-target="subjects-view"]').click();
+      };
       
-      // Core Pipeline: Parse the grid and generate all history & future records!
-      await SchedulerEngine.generateScheduleFromTimetable(gridData, startDate, endDate);
-    
-    // Auto-sync Subjects: Discover new subjects and add to Subjects DB!
-    await syncSubjectsFromTimetable(gridData);
-        initBlankGrid(); 
-      renderSavedTimetables();
-      
-      // Navigate them to history to see their generated data
-      document.querySelector('.nav-item[data-target="subjects-view"]').click();
+      const existingRecords = await getAllLectureRecords();
+      if (existingRecords.length > 0) {
+         // Show Continuity Modal
+         const modal = document.getElementById('timetable-save-modal');
+         const wipeBtn = document.getElementById('modal-save-wipe-btn');
+         const continueBtn = document.getElementById('modal-save-continue-btn');
+         const cancelBtn = document.getElementById('modal-save-cancel-btn');
+         
+         if (modal && wipeBtn && continueBtn && cancelBtn) {
+            modal.style.display = 'flex';
+            
+            wipeBtn.onclick = async () => {
+               modal.style.display = 'none';
+               await executeSave('wipe');
+            };
+            
+            continueBtn.onclick = async () => {
+               modal.style.display = 'none';
+               await executeSave('continue');
+            };
+            
+            cancelBtn.onclick = () => {
+               modal.style.display = 'none';
+            };
+         } else {
+            await executeSave('wipe'); // fallback if UI fails
+         }
+      } else {
+         await executeSave('wipe');
+      }
     });
   }
 
@@ -614,15 +647,16 @@ async function renderDashboard(dateString = null) {
         const color = lec.status === 'present' ? '#4caf50' : (lec.status === 'absent' ? '#f44336' : 'gray');
         statusHtml = `<div class="status-indicator" style="background: ${color}; opacity: 1;"></div>`;
       }
-      
-      el.innerHTML = `
-        <div class="time" style="min-width: 65px; font-weight:bold;">${lec.time}</div>
-        <div class="details" style="flex:1; margin-left: 10px;">
-          <h4>${lec.name}</h4>
-          <p>${lec.faculty || 'TBA'} • <span style="text-transform:uppercase; font-size: 0.75rem; font-weight:bold;">${lec.status}</span></p>
-        </div>
-        ${statusHtml}
-      `;
+      let roomHtml = lec.room ? `<span style="display:inline-flex; align-items:center; gap:2px; color:var(--primary-color); font-weight:600; margin-left: 4px;"><span class="material-symbols-outlined" style="font-size:12px;">location_on</span>${lec.room}</span>` : '';
+        
+        el.innerHTML = `
+          <div class="time" style="min-width: 65px; font-weight:bold;">${lec.time}</div>
+          <div class="details" style="flex:1; margin-left: 10px;">
+            <h4 style="display:flex; align-items:center;">${lec.name} ${roomHtml}</h4>
+            <p>${lec.faculty || 'TBA'} • <span style="text-transform:uppercase; font-size: 0.75rem; font-weight:bold;">${lec.status}</span></p>
+          </div>
+          ${statusHtml}
+        `;
       scheduleListEl.appendChild(el);
     });
     
@@ -698,15 +732,79 @@ initApp();
 // ==========================================
 let barChartInstance = null;
 let donutChartInstance = null;
+let currentAnalyticsMonthKey = null;
 
-async function renderAnalytics() {
-  const data = await AnalyticsEngine.getAnalyticsData();
+async function renderAnalytics(targetMonthKey = null, slideDirection = null) {
+  const data = await AnalyticsEngine.getAnalyticsData(targetMonthKey);
   const textColor = document.documentElement.getAttribute('data-theme') === 'dark' ? '#e2e2e6' : '#1a1c1e';
+  
+  currentAnalyticsMonthKey = data.activeMonthKey;
   
   // Set overall percentage
   const overallPercentEl = document.getElementById('analytics-overall-percent');
   if (overallPercentEl) {
-    overallPercentEl.textContent = `${data.monthlyPercentage.toFixed(1)}%`;
+    overallPercentEl.textContent = `${data.overallPercentage.toFixed(1)}%`;
+  }
+  
+  // Update Chart Title
+  const weeklyTitle = document.getElementById('analytics-weekly-title');
+  if (weeklyTitle) {
+    weeklyTitle.textContent = `${data.currentMonthName} Attendance Trend`;
+  }
+  
+  // Update Month Chooser
+  const monthSlider = document.getElementById('month-chooser-slider');
+  const monthLabel = document.getElementById('month-chooser-label');
+  const prevBtn = document.getElementById('month-prev-btn');
+  const nextBtn = document.getElementById('month-next-btn');
+  
+  if (monthSlider && monthLabel) {
+     const currentIndex = data.availableMonths.findIndex(m => m.key === currentAnalyticsMonthKey);
+     const currentMonthObj = data.availableMonths[currentIndex];
+     
+     // Handle Slide Animation
+     if (slideDirection) {
+        // Clone the slider to animate it out
+        const oldSlider = monthSlider.cloneNode(true);
+        oldSlider.id = ''; // remove id to prevent conflict
+        monthSlider.parentNode.appendChild(oldSlider);
+        
+        // Setup new slider
+        monthLabel.textContent = currentMonthObj ? currentMonthObj.label : data.currentMonthName;
+        monthSlider.classList.add(slideDirection === 'left' ? 'slide-right' : 'slide-left');
+        
+        // Trigger reflow
+        void monthSlider.offsetWidth;
+        
+        // Animate
+        monthSlider.classList.remove('slide-right', 'slide-left');
+        oldSlider.classList.add(slideDirection === 'left' ? 'slide-left' : 'slide-right');
+        
+        setTimeout(() => {
+           if (oldSlider.parentNode) oldSlider.parentNode.removeChild(oldSlider);
+        }, 300); // matches CSS transition duration
+     } else {
+        monthLabel.textContent = currentMonthObj ? currentMonthObj.label : data.currentMonthName;
+     }
+     
+     // Setup buttons
+     if (prevBtn) {
+        const hasPrev = currentIndex > 0;
+        prevBtn.style.opacity = hasPrev ? '1' : '0.3';
+        prevBtn.style.pointerEvents = hasPrev ? 'auto' : 'none';
+        prevBtn.onclick = () => {
+           if (hasPrev) renderAnalytics(data.availableMonths[currentIndex - 1].key, 'left');
+        };
+     }
+     
+     if (nextBtn) {
+        const hasNext = currentIndex < data.availableMonths.length - 1;
+        nextBtn.style.opacity = hasNext ? '1' : '0.3';
+        nextBtn.style.pointerEvents = hasNext ? 'auto' : 'none';
+        nextBtn.onclick = () => {
+           if (hasNext) renderAnalytics(data.availableMonths[currentIndex + 1].key, 'right');
+        };
+     }
   }
 
   // Set lectures remaining
@@ -822,16 +920,16 @@ async function renderAnalytics() {
       </thead>
       <tbody>
         <tr>
-          <td>Total Attended (Month)</td>
-          <td style="text-align: right; font-weight: 700;">${data.monthlyAttended}</td>
+          <td>Total Attended (Overall)</td>
+          <td style="text-align: right; font-weight: 700;">${data.overallAttended}</td>
         </tr>
         <tr>
-          <td>Total Classes (Month)</td>
-          <td style="text-align: right; font-weight: 700;">${data.monthlyTotal}</td>
+          <td>Total Classes (Overall)</td>
+          <td style="text-align: right; font-weight: 700;">${data.overallTotal}</td>
         </tr>
         <tr>
-          <td>Monthly Percentage</td>
-          <td style="text-align: right; font-weight: 700;">${data.monthlyPercentage.toFixed(1)}%</td>
+          <td>Overall Percentage</td>
+          <td style="text-align: right; font-weight: 700;">${data.overallPercentage.toFixed(1)}%</td>
         </tr>
         <tr>
           <td>Lectures Remaining</td>

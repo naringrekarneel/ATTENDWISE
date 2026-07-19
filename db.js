@@ -173,6 +173,13 @@ export async function generateDemoData() {
   await addSubject(semId, 'Machine Learning', 'Prof. Davis', 75, '#ff9800', 4);
 }
   
+export async function deleteFuturePendingRecords(effectiveFrom) {
+  // Delete only 'pending' records that are on or after the effective date
+  await db.lectureRecords
+    .filter(r => r.date >= effectiveFrom && r.status === 'pending')
+    .delete();
+}
+
 export async function wipeAppClean() {  
   await db.timetables.clear();  
   await db.lectureRecords.clear();  

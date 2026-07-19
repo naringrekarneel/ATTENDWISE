@@ -1,0 +1,38 @@
+
+/* Month Chooser Styles */
+.month-chooser-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 1.5rem 0;
+  gap: 1rem;
+}
+.month-chooser-window {
+  width: 200px;
+  overflow: hidden;
+  text-align: center;
+  position: relative;
+  height: 2rem;
+}
+.month-chooser-slider {
+  position: absolute;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease-in-out, opacity 0.3s ease;
+}
+.month-chooser-slider.slide-left {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+.month-chooser-slider.slide-right {
+  transform: translateX(100%);
+  opacity: 0;
+}
+.month-chooser-label {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  white-space: nowrap;
+}
