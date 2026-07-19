@@ -1,6 +1,7 @@
 import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean } from './db.js';
 import { AttendanceEngine, SchedulerEngine, HistoryEngine, AnalyticsEngine } from './engine.js';
 import Chart from 'chart.js/auto';
+import { Clipboard } from '@capacitor/clipboard';
 
 // Setup current date formatting
 const dateElement = document.getElementById('current-date');
@@ -384,27 +385,90 @@ if (removeRowBtn) {
       }
       
       const startDateInput = document.getElementById('timetable-start-date');
-    const startDate = startDateInput && startDateInput.value ? startDateInput.value : null;
-    
-    await addTimetable('default-semester', 'Manual Timetable', gridData, startDate);
-    
-    // Core Pipeline: Parse the grid and generate all history & future records!
-    await SchedulerEngine.generateScheduleFromTimetable(gridData, startDate);
+      const startDate = startDateInput && startDateInput.value ? startDateInput.value : null;
+      
+      const endDateInput = document.getElementById('timetable-end-date');
+      const endDate = endDateInput && endDateInput.value ? endDateInput.value : null;
+      
+      await addTimetable('default-semester', 'Manual Timetable', gridData, startDate, endDate);
+      
+      // Core Pipeline: Parse the grid and generate all history & future records!
+      await SchedulerEngine.generateScheduleFromTimetable(gridData, startDate, endDate);
     
     // Auto-sync Subjects: Discover new subjects and add to Subjects DB!
     await syncSubjectsFromTimetable(gridData);
-    
-    initBlankGrid(); 
-    renderSavedTimetables();
-    
-    // Navigate them to history to see their generated data
-    document.querySelector('.nav-item[data-target="subjects-view"]').click();
-  });
-}
+        initBlankGrid(); 
+      renderSavedTimetables();
+      
+      // Navigate them to history to see their generated data
+      document.querySelector('.nav-item[data-target="subjects-view"]').click();
+    });
+  }
 
-// ==========================================
-// Render Saved Timetables
-// ==========================================
+  const pasteTimetableBtn = document.getElementById('paste-timetable-btn');
+  if (pasteTimetableBtn) {
+    pasteTimetableBtn.addEventListener('click', async () => {
+      try {
+        let text = '';
+        try {
+          const { value } = await Clipboard.read();
+          text = value;
+        } catch(e) {
+          console.warn('Capacitor Clipboard read failed, falling back to navigator API:', e);
+          text = await navigator.clipboard.readText();
+        }
+        if (!text) return;
+        
+        const lines = text.trim().split('\n');
+        if (lines.length === 0) return;
+        
+        initBlankGrid(); 
+        const rowLimit = Math.min(lines.length, manualGrid.length);
+        
+        for (let r = 0; r < rowLimit; r++) {
+          const cols = lines[r].split('\t');
+          const colLimit = Math.min(cols.length, manualGrid[r].length);
+          for (let c = 0; c < colLimit; c++) {
+            if (manualGrid[r][c].hidden) continue; 
+            
+            let cellText = cols[c].trim();
+            let rowSpan = 1;
+            
+            const hrsMatch = cellText.match(/\[(\d+)\s*Hrs\]/i);
+            if (hrsMatch) {
+              rowSpan = parseInt(hrsMatch[1]);
+              cellText = cellText.replace(hrsMatch[0], '').trim();
+            }
+            
+            manualGrid[r][c].text = cellText;
+            manualGrid[r][c].rowSpan = rowSpan;
+            
+            if (rowSpan > 1) {
+              for (let span = 1; span < rowSpan; span++) {
+                if (r + span < manualGrid.length) {
+                  manualGrid[r + span][c].hidden = true;
+                  manualGrid[r + span][c].text = cellText;
+                }
+              }
+            }
+          }
+        }
+        
+        renderManualGrid();
+        
+        const originalText = pasteTimetableBtn.innerHTML;
+        pasteTimetableBtn.innerHTML = '<span class="material-symbols-outlined">check</span> Pasted!';
+        setTimeout(() => { pasteTimetableBtn.innerHTML = originalText; }, 2000);
+      } catch (err) {
+        console.error('Failed to read clipboard: ', err);
+        alert('Failed to read from clipboard. Make sure you grant paste permissions.');
+      }
+    });
+  }
+  
+  // ==========================================
+  // Render Saved Timetables
+  // ==========================================
 async function renderSavedTimetables() {
   const container = document.getElementById('timetables-container');
   if (!container) return;
@@ -429,9 +493,14 @@ async function renderSavedTimetables() {
           <h4 style="margin-bottom: 0.25rem;">${tt.name}</h4>
           <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">Active Schedule • ${tt.gridData.length} rows</p>
         </div>
-        <button class="icon-btn delete-timetable-btn" data-id="${tt.id}" style="color: #ff4444; background: rgba(255, 68, 68, 0.1); padding: 6px;">
-          <span class="material-symbols-outlined" style="font-size: 1.2rem;">delete</span>
-        </button>
+          <div style="display: flex; gap: 8px;">
+            <button class="icon-btn copy-saved-timetable-btn" data-id="${tt.id}" style="color: var(--primary-color); background: var(--surface-color); border: 1px solid var(--primary-color); padding: 6px; border-radius: 8px;">
+              <span class="material-symbols-outlined" style="font-size: 1.2rem;">content_copy</span>
+            </button>
+            <button class="icon-btn delete-timetable-btn" data-id="${tt.id}" style="color: #ff4444; background: rgba(255, 68, 68, 0.1); padding: 6px; border-radius: 8px; border: none;">
+              <span class="material-symbols-outlined" style="font-size: 1.2rem;">delete</span>
+            </button>
+          </div>
       </div>
       <div style="overflow-x: auto; background: var(--surface-color); border-radius: 8px;">
         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem;">
@@ -452,6 +521,33 @@ async function renderSavedTimetables() {
         if (confirm("Are you sure you want to delete this timetable? This will permanently wipe all your subjects and attendance history!")) {
           await wipeAppClean();
           window.location.reload();
+        }
+      });
+    });
+
+    // Attach copy handlers
+    document.querySelectorAll('.copy-saved-timetable-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = btn.getAttribute('data-id');
+        const tt = timetables.find(t => t.id === id);
+        if (tt && tt.gridData) {
+          const copyText = tt.gridData.map(row => row.join('\t')).join('\n');
+          try {
+            await Clipboard.write({ string: copyText });
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 1.2rem;">check</span>';
+            setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+          } catch (err) {
+            console.warn('Capacitor Clipboard write failed, falling back to navigator API:', err);
+            navigator.clipboard.writeText(copyText).then(() => {
+              const originalHtml = btn.innerHTML;
+              btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 1.2rem;">check</span>';
+              setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+            }).catch(e => {
+              console.error('Failed to copy: ', e);
+              alert('Failed to copy timetable to clipboard.');
+            });
+          }
         }
       });
     });
@@ -567,6 +663,30 @@ async function initApp() {
       renderDashboard(selectedDate);
     });
   }
+
+  const prevDateBtn = document.getElementById('prev-date-btn');
+  if (prevDateBtn && datePicker) {
+    prevDateBtn.addEventListener('click', () => {
+      if (!datePicker.value) return;
+      const d = new Date(datePicker.value);
+      d.setDate(d.getDate() - 1);
+      const newDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      datePicker.value = newDateStr;
+      datePicker.dispatchEvent(new Event('change'));
+    });
+  }
+
+  const nextDateBtn = document.getElementById('next-date-btn');
+  if (nextDateBtn && datePicker) {
+    nextDateBtn.addEventListener('click', () => {
+      if (!datePicker.value) return;
+      const d = new Date(datePicker.value);
+      d.setDate(d.getDate() + 1);
+      const newDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      datePicker.value = newDateStr;
+      datePicker.dispatchEvent(new Event('change'));
+    });
+  };
 }
 window.renderDashboard = () => renderDashboard(currentDashboardDate);
 

@@ -26,21 +26,18 @@ export class AttendanceEngine {
     await SchedulerEngine.syncDateLectures(dateString);
     const todayRecs = await getLecturesByDate(dateString);
     
-    // Simulate aggregating historical stats plus today's live actions
-    let presentCount = 42; 
-    let totalCount = 54;
+    const allRecords = await getAllLectureRecords();
+    let presentCount = 0; 
+    let totalCount = 0;
     
-    todayRecs.forEach(r => {
+    allRecords.forEach(r => {
       if (r.status === 'present') presentCount++;
       if (r.status === 'present' || r.status === 'absent') totalCount++;
     });
     
     const percentage = this.calculatePercentage(presentCount, totalCount);
     
-    // Base values for prediction
-    const currentSubjectPresent = 13 + (todayRecs[0]?.status === 'present' ? 1 : 0);
-    const currentSubjectTotal = 15 + (todayRecs[0]?.status !== 'pending' ? 1 : 0);
-    const safeBunks = this.calculateSafeBunks(currentSubjectPresent, currentSubjectTotal, 75);
+    const safeBunks = this.calculateSafeBunks(presentCount, totalCount, 75);
 
     return {
       overallPercentage: percentage,
@@ -55,26 +52,35 @@ export class AttendanceEngine {
  * Runs automatically on app start. Generates daily LectureRecords based on Timetable.
  */
 export class SchedulerEngine {
-  static async generateScheduleFromTimetable(gridData, effectiveFrom = null) {
+  static async generateScheduleFromTimetable(gridData, effectiveFrom = null, effectiveUntil = null) {
     // Clear old data when a new timetable is saved
     await clearLectureRecords();
     
     const newRecords = [];
     const daysMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
     
-    let startDiff = 30; // default
+    let startDiff = 30; // default start
+    let endDiff = -120; // default end (4 months future)
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
     if (effectiveFrom) {
       const [y, m, d] = effectiveFrom.split('-').map(Number);
       const startDate = new Date(y, m - 1, d);
-      const today = new Date();
-      today.setHours(0,0,0,0);
       const diffTime = today - startDate;
       startDiff = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       if (startDiff < 0) startDiff = -1; // If future, don't generate past history
     }
+    
+    if (effectiveUntil) {
+      const [y, m, d] = effectiveUntil.split('-').map(Number);
+      const endDate = new Date(y, m - 1, d);
+      const diffTime = today - endDate;
+      endDiff = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    }
 
-    // Simulate past days and future 4 months (120 days) to populate History and Dashboard
-    for (let i = startDiff; i >= -120; i--) {
+    // Simulate past days and future days based on start and end diffs
+    for (let i = startDiff; i >= endDiff; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dayName = daysMap[d.getDay()];
@@ -102,13 +108,7 @@ export class SchedulerEngine {
                  continue;
              }
              
-             const isPast = i > 0;
              let status = 'pending';
-             
-             // Retroactively simulate past attendance (80% chance)
-             if (isPast) {
-               status = Math.random() > 0.20 ? 'present' : 'absent';
-             }
              
              newRecords.push({
                id: crypto.randomUUID(),
@@ -148,6 +148,17 @@ export class SchedulerEngine {
       startD.setHours(0,0,0,0);
       if (reqDate < startD) {
         return; // Do not generate records before semester start!
+      }
+    }
+    
+    // Check if the requested date is AFTER the semester end date
+    if (active.effectiveUntil) {
+      const reqDate = new Date(dateString);
+      const endD = new Date(active.effectiveUntil);
+      reqDate.setHours(0,0,0,0);
+      endD.setHours(0,0,0,0);
+      if (reqDate > endD) {
+        return; // Do not generate records after semester end!
       }
     }
     

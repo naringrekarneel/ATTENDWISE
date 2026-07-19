@@ -14,7 +14,7 @@ db.version(1).stores({
 });
 
 // Helper functions for Subjects
-export async function addTimetable(semesterId, name, gridData, effectiveFrom = null) {
+export async function addTimetable(semesterId, name, gridData, effectiveFrom = null, effectiveUntil = null) {
   const id = uuidv4();
   await db.timetables.add({
     id,
@@ -23,6 +23,7 @@ export async function addTimetable(semesterId, name, gridData, effectiveFrom = n
     gridData, // Store the raw parsed grid
     isActive: true,
     effectiveFrom,
+    effectiveUntil,
     createdAt: new Date().toISOString()
   });
   return id;
