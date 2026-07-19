@@ -340,14 +340,12 @@ export class AnalyticsEngine {
     const target = 0.75; // 75% target
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     
-    // 1. Find all available months that have data
+    // 1. Find all available months that have data (including scheduled/pending)
     const availableMonthsSet = new Set();
     allRecords.forEach(r => {
-      if (r.status === 'present' || r.status === 'absent') {
-        const d = new Date(r.date + "T00:00:00");
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        availableMonthsSet.add(key);
-      }
+      const d = new Date(r.date + "T00:00:00");
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      availableMonthsSet.add(key);
     });
     
     let availableMonths = Array.from(availableMonthsSet).sort(); // chronological sort

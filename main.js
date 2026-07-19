@@ -1,4 +1,4 @@
-import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean, getAllLectureRecords } from './db.js';
+import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean, getAllLectureRecords, backupData, restoreData } from './db.js';
 import { AttendanceEngine, SchedulerEngine, HistoryEngine, AnalyticsEngine } from './engine.js';
 import Chart from 'chart.js/auto';
 import { Clipboard } from '@capacitor/clipboard';
@@ -1140,3 +1140,78 @@ async function renderHistory() {
   });
 }
 window.renderHistory = renderHistory;
+
+// ==========================================
+// Settings, Backup & Restore
+// ==========================================
+const settingsBtn = document.getElementById('settings-btn');
+const settingsModal = document.getElementById('settings-modal');
+const closeSettingsBtn = document.getElementById('close-settings-btn');
+const backupBtn = document.getElementById('backup-data-btn');
+const restoreBtn = document.getElementById('restore-data-btn');
+const restoreFileInput = document.getElementById('restore-file-input');
+
+if (settingsBtn && settingsModal) {
+  settingsBtn.addEventListener('click', () => {
+    settingsModal.style.display = 'flex';
+  });
+  closeSettingsBtn.addEventListener('click', () => {
+    settingsModal.style.display = 'none';
+  });
+}
+
+if (backupBtn) {
+  backupBtn.addEventListener('click', async () => {
+    try {
+      backupBtn.style.opacity = '0.7';
+      backupBtn.innerText = 'Preparing Backup...';
+      
+      const jsonString = await backupData();
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `AttendWise_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      alert('Backup downloaded successfully! Please save this file in Google Drive or a safe place.');
+    } catch (err) {
+      alert('Failed to generate backup: ' + err.message);
+    } finally {
+      backupBtn.style.opacity = '1';
+      backupBtn.innerHTML = '<div style="font-weight: 700; font-size: 1.05rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; color: var(--primary-color);"><span class="material-symbols-outlined">download</span> Backup Data to File</div><div style="font-size: 0.85rem;">Export a .json file you can save to Google Drive.</div>';
+    }
+  });
+}
+
+if (restoreBtn && restoreFileInput) {
+  restoreBtn.addEventListener('click', () => {
+    restoreFileInput.click();
+  });
+  
+  restoreFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      const text = await file.text();
+      await restoreData(text);
+      
+      alert('Data restored successfully! The app will now reload.');
+      window.location.reload();
+    } catch (err) {
+      alert('Failed to restore data. Please make sure you selected a valid AttendWise backup JSON file.');
+      console.error(err);
+    }
+    
+    // Clear input
+    e.target.value = '';
+  });
+}

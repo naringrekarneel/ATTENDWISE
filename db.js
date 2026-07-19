@@ -79,15 +79,21 @@ export async function syncSubjectsFromTimetable(gridData) {
       if (!cellText || cellText.trim() === '') continue;
       
       // Clean the text: remove [X Hrs] annotations
-      cellText = cellText.replace(/\[\d+\s*Hrs\]/ig, '').trim();
+      let cleanSubject = cellText.replace(/\[\d+\s*Hrs\]/ig, '').trim();
+      
+      // Extract room number if present, keeping only the subject name
+      const roomMatch = cleanSubject.match(/(.*?)\s*(?:\(([^)]+)\)|\|\s*(.*))$/);
+      if (roomMatch) {
+        cleanSubject = roomMatch[1].trim();
+      }
       
       // Ignore common breaks
-      if (cellText.toUpperCase() === 'BREAK' || cellText.toUpperCase() === 'LUNCH' || cellText.toUpperCase() === 'RECESS') continue;
+      if (cleanSubject.toUpperCase() === 'BREAK' || cleanSubject.toUpperCase() === 'LUNCH' || cleanSubject.toUpperCase() === 'RECESS' || cleanSubject === '') continue;
       
-      subjectsInGrid.add(cellText.toUpperCase());
+      subjectsInGrid.add(cleanSubject.toUpperCase());
       
-      if (!existingNames.includes(cellText.toUpperCase())) {
-        uniqueNewSubjects.add(cellText);
+      if (!existingNames.includes(cleanSubject.toUpperCase())) {
+        uniqueNewSubjects.add(cleanSubject);
       }
     }
   }
@@ -184,4 +190,36 @@ export async function wipeAppClean() {
   await db.timetables.clear();  
   await db.lectureRecords.clear();  
   await db.subjects.clear();  
-} 
+}
+
+export async function backupData() {
+  const data = {
+    timetables: await db.timetables.toArray(),
+    subjects: await db.subjects.toArray(),
+    lectureRecords: await db.lectureRecords.toArray()
+  };
+  return JSON.stringify(data);
+}
+
+export async function restoreData(jsonString) {
+  try {
+    const data = JSON.parse(jsonString);
+    if (!data.timetables || !data.subjects || !data.lectureRecords) {
+      throw new Error("Invalid backup file format");
+    }
+    
+    await db.transaction('rw', db.timetables, db.subjects, db.lectureRecords, async () => {
+      await db.timetables.clear();
+      await db.subjects.clear();
+      await db.lectureRecords.clear();
+      
+      if (data.timetables.length > 0) await db.timetables.bulkAdd(data.timetables);
+      if (data.subjects.length > 0) await db.subjects.bulkAdd(data.subjects);
+      if (data.lectureRecords.length > 0) await db.lectureRecords.bulkAdd(data.lectureRecords);
+    });
+    return true;
+  } catch (error) {
+    console.error("Restore failed", error);
+    throw error;
+  }
+}
