@@ -10,6 +10,30 @@ if (dateElement) {
   dateElement.textContent = new Date().toLocaleDateString('en-US', options);
 }
 
+// Onboarding Logic
+const savedName = localStorage.getItem('studentName');
+const dashboardGreeting = document.getElementById('dashboard-greeting');
+if (savedName) {
+  if (dashboardGreeting) dashboardGreeting.textContent = `Hi, ${savedName} 👋`;
+} else {
+  const onboardingModal = document.getElementById('onboarding-modal');
+  const saveBtn = document.getElementById('save-name-btn');
+  const nameInput = document.getElementById('student-name-input');
+  
+  if (onboardingModal) onboardingModal.style.display = 'flex';
+  
+  if (saveBtn && nameInput) {
+    saveBtn.addEventListener('click', () => {
+       const name = nameInput.value.trim();
+       if (name) {
+          localStorage.setItem('studentName', name);
+          if (dashboardGreeting) dashboardGreeting.textContent = `Hi, ${name} 👋`;
+          onboardingModal.style.display = 'none';
+       }
+    });
+  }
+}
+
 // Theme toggling logic
 const themeToggle = document.getElementById('theme-toggle');
 const themeIcon = themeToggle.querySelector('span');
@@ -367,6 +391,17 @@ if (removeRowBtn) {
 
   if (saveManualTimetableBtn) {
     saveManualTimetableBtn.addEventListener('click', async () => {
+      const startDateInput = document.getElementById('timetable-start-date');
+      const startDate = startDateInput && startDateInput.value ? startDateInput.value : null;
+      
+      const endDateInput = document.getElementById('timetable-end-date');
+      const endDate = endDateInput && endDateInput.value ? endDateInput.value : null;
+
+      if (!startDate || !endDate) {
+        alert("Please select both a Semester Start Date and Semester End Date before saving your timetable!");
+        return;
+      }
+
       // Extract logical state into simple grid format for the DB, preserving columns
       const gridData = manualGrid.map(row => row.map(c => ''));
       for (let r = 0; r < manualGrid.length; r++) {
@@ -383,12 +418,6 @@ if (removeRowBtn) {
           }
         }
       }
-      
-      const startDateInput = document.getElementById('timetable-start-date');
-      const startDate = startDateInput && startDateInput.value ? startDateInput.value : null;
-      
-      const endDateInput = document.getElementById('timetable-end-date');
-      const endDate = endDateInput && endDateInput.value ? endDateInput.value : null;
       
       const executeSave = async (mode) => {
          await addTimetable('default-semester', 'Manual Timetable', gridData, startDate, endDate);
@@ -407,31 +436,7 @@ if (removeRowBtn) {
       
       const existingRecords = await getAllLectureRecords();
       if (existingRecords.length > 0) {
-         // Show Continuity Modal
-         const modal = document.getElementById('timetable-save-modal');
-         const wipeBtn = document.getElementById('modal-save-wipe-btn');
-         const continueBtn = document.getElementById('modal-save-continue-btn');
-         const cancelBtn = document.getElementById('modal-save-cancel-btn');
-         
-         if (modal && wipeBtn && continueBtn && cancelBtn) {
-            modal.style.display = 'flex';
-            
-            wipeBtn.onclick = async () => {
-               modal.style.display = 'none';
-               await executeSave('wipe');
-            };
-            
-            continueBtn.onclick = async () => {
-               modal.style.display = 'none';
-               await executeSave('continue');
-            };
-            
-            cancelBtn.onclick = () => {
-               modal.style.display = 'none';
-            };
-         } else {
-            await executeSave('wipe'); // fallback if UI fails
-         }
+         await executeSave('continue');
       } else {
          await executeSave('wipe');
       }
@@ -634,6 +639,8 @@ async function renderDashboard(dateString = null) {
     insights.schedule.forEach(lec => {
       const el = document.createElement('div');
       el.className = `schedule-item ${lec.status === 'present' ? 'active-class' : ''}`;
+      el.dataset.id = lec.id;
+      el.dataset.status = lec.status;
       
       let statusHtml = '';
       if (lec.status === 'pending') {
@@ -673,6 +680,34 @@ async function renderDashboard(dateString = null) {
         await updateLectureStatus(e.currentTarget.dataset.id, 'absent');
         renderDashboard(currentDashboardDate);
       });
+    });
+    
+    // Long press logic to revert status
+    document.querySelectorAll('.schedule-item').forEach(item => {
+      if (item.dataset.status === 'pending') return;
+      
+      let pressTimer;
+      const startPress = () => {
+        item.style.transform = 'scale(0.98)';
+        pressTimer = setTimeout(async () => {
+          if (navigator.vibrate) navigator.vibrate(50);
+          item.style.transform = 'scale(1)';
+          await updateLectureStatus(item.dataset.id, 'pending');
+          renderDashboard(currentDashboardDate);
+        }, 600);
+      };
+      
+      const cancelPress = () => {
+        clearTimeout(pressTimer);
+        item.style.transform = 'scale(1)';
+      };
+      
+      item.addEventListener('touchstart', startPress, {passive: true});
+      item.addEventListener('touchend', cancelPress);
+      item.addEventListener('touchmove', cancelPress, {passive: true});
+      item.addEventListener('mousedown', startPress);
+      item.addEventListener('mouseup', cancelPress);
+      item.addEventListener('mouseleave', cancelPress);
     });
   }
 }
@@ -1146,19 +1181,26 @@ window.renderHistory = renderHistory;
 // ==========================================
 const settingsBtn = document.getElementById('settings-btn');
 const settingsModal = document.getElementById('settings-modal');
-const closeSettingsBtn = document.getElementById('close-settings-btn');
-const backupBtn = document.getElementById('backup-data-btn');
-const restoreBtn = document.getElementById('restore-data-btn');
+const closeSettingsBtn = document.getElementById('modal-settings-cancel-btn');
+const backupBtn = document.getElementById('modal-backup-btn');
+const restoreBtn = document.getElementById('modal-restore-btn');
 const restoreFileInput = document.getElementById('restore-file-input');
 
-if (settingsBtn && settingsModal) {
-  settingsBtn.addEventListener('click', () => {
-    settingsModal.style.display = 'flex';
-  });
-  closeSettingsBtn.addEventListener('click', () => {
-    settingsModal.style.display = 'none';
-  });
-}
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      // Hide all views
+      const views = document.querySelectorAll('.view');
+      views.forEach(view => view.style.display = 'none');
+      
+      // Deactivate all nav items
+      const navItems = document.querySelectorAll('.nav-item');
+      navItems.forEach(nav => nav.classList.remove('active'));
+      
+      // Show settings view
+      const settingsView = document.getElementById('settings-view');
+      if (settingsView) settingsView.style.display = 'block';
+    });
+  }
 
 if (backupBtn) {
   backupBtn.addEventListener('click', async () => {
