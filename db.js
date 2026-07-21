@@ -221,3 +221,270 @@ export async function restoreData(jsonString) {
     throw error;
   }
 }
+
+// ==========================================
+// JSON Semester Schema Import/Export & Validation
+// ==========================================
+
+export async function exportSemesterJSON() {
+  const semesterId = 'default-semester';
+  const subjects = await getSubjects(semesterId);
+  const timetables = await getTimetables(semesterId);
+
+  const jsonSubjects = subjects.map(s => {
+    const code = s.facultyName && s.facultyName !== 'TBA' ? s.facultyName : (s.name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 5));
+    return {
+      id: s.id,
+      name: s.name,
+      code: code,
+      color: s.color || '#0061a4'
+    };
+  });
+
+  const jsonTimetable = [];
+  const subjectIdMapByName = {};
+  jsonSubjects.forEach(s => {
+    subjectIdMapByName[s.name.toUpperCase()] = s.id;
+    if (s.code) subjectIdMapByName[s.code.toUpperCase()] = s.id;
+  });
+
+  if (timetables.length > 0) {
+    const activeTT = timetables[timetables.length - 1];
+    const grid = activeTT.gridData || [];
+    if (grid.length > 1) {
+      const header = grid[0];
+      const fullDays = {
+        MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday', SUN: 'Sunday'
+      };
+
+      for (let r = 1; r < grid.length; r++) {
+        const startTime = grid[r][0];
+        let endTime = '';
+        if (r < grid.length - 1 && grid[r + 1][0]) {
+          endTime = grid[r + 1][0];
+        } else if (startTime && startTime.includes(':')) {
+          let [h, m] = startTime.split(':').map(Number);
+          endTime = `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        }
+
+        for (let c = 1; c < header.length; c++) {
+          const rawCell = grid[r][c];
+          if (!rawCell || !rawCell.trim()) continue;
+
+          let cellText = rawCell.replace(/\[\d+\s*Hrs\]/ig, '').trim();
+          let room = '';
+          const roomMatch = cellText.match(/(.*?)\s*(?:\(([^)]+)\)|\|\s*(.*))$/);
+          if (roomMatch) {
+            cellText = roomMatch[1].trim();
+            room = (roomMatch[2] || roomMatch[3]).trim();
+          }
+
+          if (['BREAK', 'LUNCH', 'RECESS'].includes(cellText.toUpperCase())) continue;
+
+          const headerDay = header[c].toUpperCase().trim();
+          const dayKey = Object.keys(fullDays).find(k => headerDay.includes(k));
+          const dayName = dayKey ? fullDays[dayKey] : header[c];
+
+          const matchedSubjId = subjectIdMapByName[cellText.toUpperCase()] || cellText.toLowerCase().replace(/\s+/g, '-');
+          const type = cellText.toLowerCase().includes('lab') ? 'lab' : 'lecture';
+
+          jsonTimetable.push({
+            day: dayName,
+            start: startTime,
+            end: endTime,
+            subjectId: matchedSubjId,
+            room: room,
+            type: type
+          });
+        }
+      }
+    }
+  }
+
+  return JSON.stringify({
+    subjects: jsonSubjects,
+    timetable: jsonTimetable
+  }, null, 2);
+}
+
+export function validateSemesterJSON(input) {
+  let parsed = null;
+  if (typeof input === 'string') {
+    try {
+      parsed = JSON.parse(input);
+    } catch (e) {
+      return { valid: false, errors: ['Invalid JSON syntax: ' + e.message], warnings: [], preview: null };
+    }
+  } else {
+    parsed = input;
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return { valid: false, errors: ['JSON root must be an object'], warnings: [], preview: null };
+  }
+
+  const errors = [];
+  const warnings = [];
+
+  if (!Array.isArray(parsed.subjects)) {
+    errors.push('Missing or invalid "subjects" array.');
+  }
+
+  if (!Array.isArray(parsed.timetable)) {
+    errors.push('Missing or invalid "timetable" array.');
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, errors, warnings, preview: null };
+  }
+
+  const subjectIds = new Set();
+
+  parsed.subjects.forEach((sub, idx) => {
+    if (!sub || typeof sub !== 'object') {
+      errors.push(`Subject at index ${idx} is not an object.`);
+      return;
+    }
+    if (!sub.id || typeof sub.id !== 'string') {
+      errors.push(`Subject at index ${idx} ("${sub.name || 'unnamed'}") is missing a valid string "id".`);
+    } else if (subjectIds.has(sub.id.toLowerCase())) {
+      errors.push(`Duplicate subject ID found: "${sub.id}".`);
+    } else {
+      subjectIds.add(sub.id.toLowerCase());
+    }
+
+    if (!sub.name || typeof sub.name !== 'string') {
+      errors.push(`Subject with id "${sub.id || idx}" is missing a valid "name".`);
+    }
+  });
+
+  const validDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+  parsed.timetable.forEach((slot, idx) => {
+    if (!slot || typeof slot !== 'object') {
+      errors.push(`Timetable slot at index ${idx} is not an object.`);
+      return;
+    }
+
+    if (!slot.day || typeof slot.day !== 'string') {
+      errors.push(`Timetable slot ${idx} is missing a valid "day".`);
+    } else {
+      const cleanDay = slot.day.trim().toUpperCase();
+      if (!validDays.includes(cleanDay)) {
+        warnings.push(`Slot ${idx} has an unusual day: "${slot.day}". Standard values: Monday to Saturday.`);
+      }
+    }
+
+    if (!slot.start || typeof slot.start !== 'string') {
+      errors.push(`Timetable slot ${idx} is missing a valid "start" time.`);
+    }
+
+    if (!slot.subjectId || typeof slot.subjectId !== 'string') {
+      errors.push(`Timetable slot ${idx} (${slot.day} ${slot.start}) is missing "subjectId".`);
+    } else if (!subjectIds.has(slot.subjectId.toLowerCase())) {
+      errors.push(`Timetable slot ${idx} (${slot.day} ${slot.start}) references unknown subjectId: "${slot.subjectId}".`);
+    }
+  });
+
+  const isValid = errors.length === 0;
+
+  return {
+    valid: isValid,
+    errors,
+    warnings,
+    preview: {
+      subjectsCount: parsed.subjects.length,
+      timetableCount: parsed.timetable.length,
+      subjects: parsed.subjects,
+      timetable: parsed.timetable
+    }
+  };
+}
+
+export async function importSemesterJSON(jsonInput, startDate = null, endDate = null) {
+  const validation = validateSemesterJSON(jsonInput);
+  if (!validation.valid) {
+    throw new Error("Validation failed: " + validation.errors.join("; "));
+  }
+
+  const { subjects, timetable } = validation.preview;
+  const semesterId = 'default-semester';
+
+  if (!startDate) {
+    const today = new Date();
+    startDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+  if (!endDate) {
+    const today = new Date();
+    const end = new Date(today.getFullYear(), today.getMonth() + 4, 1);
+    endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+
+  const daysHeader = ['Time', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayIndexMap = {
+    MONDAY: 1, MON: 1,
+    TUESDAY: 2, TUE: 2,
+    WEDNESDAY: 3, WED: 3,
+    THURSDAY: 4, THU: 4,
+    FRIDAY: 5, FRI: 5,
+    SATURDAY: 6, SAT: 6,
+    SUNDAY: 6
+  };
+
+  const uniqueTimes = Array.from(new Set(timetable.map(t => t.start.trim()))).sort();
+  if (uniqueTimes.length === 0) {
+    uniqueTimes.push('09:15', '10:15', '11:15', '13:15', '14:15', '15:15');
+  }
+
+  const subjectMap = {};
+  subjects.forEach(s => {
+    subjectMap[s.id.toLowerCase()] = s;
+  });
+
+  const gridData = [];
+  gridData.push(daysHeader);
+
+  uniqueTimes.forEach(t => {
+    const row = new Array(7).fill('');
+    row[0] = t;
+    gridData.push(row);
+  });
+
+  timetable.forEach(slot => {
+    const dayKey = slot.day.toUpperCase().trim();
+    const colIdx = dayIndexMap[dayKey];
+    if (!colIdx) return;
+
+    const timeRowIdx = uniqueTimes.indexOf(slot.start.trim()) + 1;
+    if (timeRowIdx <= 0) return;
+
+    const sub = subjectMap[slot.subjectId.toLowerCase()];
+    const subName = sub ? sub.name : slot.subjectId;
+    const roomInfo = slot.room ? ` | ${slot.room}` : '';
+
+    gridData[timeRowIdx][colIdx] = `${subName}${roomInfo}`;
+  });
+
+  await db.transaction('rw', db.subjects, db.timetables, db.lectureRecords, async () => {
+    await wipeAppClean();
+
+    for (const sub of subjects) {
+      await addSubject(
+        semesterId,
+        sub.name,
+        sub.code || 'TBA',
+        75,
+        sub.color || '#0061a4',
+        3
+      );
+    }
+
+    await addTimetable(semesterId, 'Imported JSON Timetable', gridData, startDate, endDate);
+  });
+
+  const { SchedulerEngine } = await import('./engine.js');
+  await SchedulerEngine.generateScheduleFromTimetable(gridData, startDate, endDate, 'wipe');
+
+  return true;
+}
+

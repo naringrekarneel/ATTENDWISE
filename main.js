@@ -1,4 +1,4 @@
-import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean, getAllLectureRecords, backupData, restoreData } from './db.js';
+import { addSubject, getSubjects, deleteSubject, generateDemoData, addTimetable, getTimetables, updateLectureStatus, deleteTimetable, syncSubjectsFromTimetable, wipeAppClean, getAllLectureRecords, backupData, restoreData, exportSemesterJSON, validateSemesterJSON, importSemesterJSON } from './db.js';
 import { AttendanceEngine, SchedulerEngine, HistoryEngine, AnalyticsEngine } from './engine.js';
 import Chart from 'chart.js/auto';
 import { Clipboard } from '@capacitor/clipboard';
@@ -1255,5 +1255,232 @@ if (restoreBtn && restoreFileInput) {
     
     // Clear input
     e.target.value = '';
+  });
+}
+
+// ==========================================
+// JSON Semester Sync Modal Handlers
+// ==========================================
+const jsonModal = document.getElementById('json-modal');
+const jsonModalBtn = document.getElementById('json-modal-btn');
+const modalJsonSyncBtn = document.getElementById('modal-json-sync-btn');
+const jsonModalClose = document.getElementById('json-modal-close');
+
+const jsonTabExport = document.getElementById('json-tab-export');
+const jsonTabImport = document.getElementById('json-tab-import');
+const jsonExportContainer = document.getElementById('json-export-container');
+const jsonImportContainer = document.getElementById('json-import-container');
+
+const jsonExportText = document.getElementById('json-export-text');
+const jsonCopyBtn = document.getElementById('json-copy-btn');
+const jsonDownloadBtn = document.getElementById('json-download-btn');
+
+const jsonUploadTrigger = document.getElementById('json-upload-trigger');
+const jsonFileInput = document.getElementById('json-file-input');
+const jsonPasteClipboard = document.getElementById('json-paste-clipboard');
+const jsonImportText = document.getElementById('json-import-text');
+
+const jsonValidationStatus = document.getElementById('json-validation-status');
+const jsonImportPreview = document.getElementById('json-import-preview');
+const previewSubjCount = document.getElementById('preview-subj-count');
+const previewSlotCount = document.getElementById('preview-slot-count');
+const previewSubjChips = document.getElementById('preview-subj-chips');
+const jsonConfirmImportBtn = document.getElementById('json-confirm-import-btn');
+
+async function openJSONModal(tab = 'export') {
+  if (!jsonModal) return;
+
+  if (tab === 'export') {
+    switchJSONTab('export');
+    const exportedData = await exportSemesterJSON();
+    if (jsonExportText) jsonExportText.value = exportedData;
+  } else {
+    switchJSONTab('import');
+  }
+
+  jsonModal.style.display = 'flex';
+}
+
+function switchJSONTab(targetTab) {
+  if (targetTab === 'export') {
+    jsonTabExport.style.background = 'var(--surface-color)';
+    jsonTabExport.style.color = 'var(--text-primary)';
+    jsonTabImport.style.background = 'transparent';
+    jsonTabImport.style.color = 'var(--text-secondary)';
+    jsonExportContainer.style.display = 'flex';
+    jsonImportContainer.style.display = 'none';
+  } else {
+    jsonTabImport.style.background = 'var(--surface-color)';
+    jsonTabImport.style.color = 'var(--text-primary)';
+    jsonTabExport.style.background = 'transparent';
+    jsonTabExport.style.color = 'var(--text-secondary)';
+    jsonImportContainer.style.display = 'flex';
+    jsonExportContainer.style.display = 'none';
+  }
+}
+
+if (jsonModalBtn) jsonModalBtn.addEventListener('click', () => openJSONModal('export'));
+if (modalJsonSyncBtn) modalJsonSyncBtn.addEventListener('click', () => openJSONModal('export'));
+if (jsonModalClose) jsonModalClose.addEventListener('click', () => jsonModal.style.display = 'none');
+
+if (jsonTabExport) jsonTabExport.addEventListener('click', () => openJSONModal('export'));
+if (jsonTabImport) jsonTabImport.addEventListener('click', () => switchJSONTab('import'));
+
+if (jsonCopyBtn) {
+  jsonCopyBtn.addEventListener('click', async () => {
+    const text = jsonExportText.value;
+    if (!text) return;
+    try {
+      await Clipboard.write({ string: text });
+    } catch(e) {
+      await navigator.clipboard.writeText(text);
+    }
+    const orig = jsonCopyBtn.innerHTML;
+    jsonCopyBtn.innerHTML = '<span class="material-symbols-outlined">check</span> Copied!';
+    setTimeout(() => { jsonCopyBtn.innerHTML = orig; }, 2000);
+  });
+}
+
+if (jsonDownloadBtn) {
+  jsonDownloadBtn.addEventListener('click', () => {
+    const text = jsonExportText.value;
+    if (!text) return;
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AttendWise_Semester_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  });
+}
+
+function handleJSONValidationUpdate(inputVal) {
+  if (!inputVal || !inputVal.trim()) {
+    jsonValidationStatus.style.display = 'none';
+    jsonImportPreview.style.display = 'none';
+    jsonConfirmImportBtn.disabled = true;
+    jsonConfirmImportBtn.style.opacity = '0.5';
+    jsonConfirmImportBtn.style.cursor = 'not-allowed';
+    return;
+  }
+
+  const result = validateSemesterJSON(inputVal);
+
+  if (result.valid) {
+    jsonValidationStatus.style.display = 'block';
+    jsonValidationStatus.style.background = 'rgba(76, 175, 80, 0.15)';
+    jsonValidationStatus.style.border = '1px solid #4caf50';
+    jsonValidationStatus.style.color = '#4caf50';
+    jsonValidationStatus.innerHTML = '<div style="font-weight:700; display:flex; align-items:center; gap:6px;"><span class="material-symbols-outlined" style="font-size:1.1rem;">check_circle</span> JSON Validated Successfully</div>';
+
+    if (result.warnings && result.warnings.length > 0) {
+      jsonValidationStatus.innerHTML += `<div style="font-size:0.8rem; margin-top:4px; opacity:0.9;">${result.warnings.join('<br>')}</div>`;
+    }
+
+    if (result.preview) {
+      jsonImportPreview.style.display = 'block';
+      previewSubjCount.textContent = result.preview.subjectsCount;
+      previewSlotCount.textContent = result.preview.timetableCount;
+
+      previewSubjChips.innerHTML = result.preview.subjects.map(s => `
+        <span style="background: ${s.color || '#0061a4'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">
+          ${s.name} (${s.code || s.id})
+        </span>
+      `).join('');
+    }
+
+    jsonConfirmImportBtn.disabled = false;
+    jsonConfirmImportBtn.style.opacity = '1';
+    jsonConfirmImportBtn.style.cursor = 'pointer';
+  } else {
+    jsonValidationStatus.style.display = 'block';
+    jsonValidationStatus.style.background = 'rgba(244, 67, 54, 0.15)';
+    jsonValidationStatus.style.border = '1px solid #f44336';
+    jsonValidationStatus.style.color = '#f44336';
+    jsonValidationStatus.innerHTML = `
+      <div style="font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+        <span class="material-symbols-outlined" style="font-size:1.1rem;">error</span> Validation Errors Detected:
+      </div>
+      <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.8rem;">
+        ${result.errors.map(err => `<li>${err}</li>`).join('')}
+      </ul>
+    `;
+    jsonImportPreview.style.display = 'none';
+    jsonConfirmImportBtn.disabled = true;
+    jsonConfirmImportBtn.style.opacity = '0.5';
+    jsonConfirmImportBtn.style.cursor = 'not-allowed';
+  }
+}
+
+if (jsonImportText) {
+  jsonImportText.addEventListener('input', (e) => {
+    handleJSONValidationUpdate(e.target.value);
+  });
+}
+
+if (jsonUploadTrigger && jsonFileInput) {
+  jsonUploadTrigger.addEventListener('click', () => jsonFileInput.click());
+  jsonFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      jsonImportText.value = text;
+      handleJSONValidationUpdate(text);
+    } catch(err) {
+      alert("Failed to read JSON file: " + err.message);
+    }
+    e.target.value = '';
+  });
+}
+
+if (jsonPasteClipboard) {
+  jsonPasteClipboard.addEventListener('click', async () => {
+    try {
+      let text = '';
+      try {
+        const { value } = await Clipboard.read();
+        text = value;
+      } catch(e) {
+        text = await navigator.clipboard.readText();
+      }
+      if (text) {
+        jsonImportText.value = text;
+        handleJSONValidationUpdate(text);
+      }
+    } catch(err) {
+      alert("Failed to paste from clipboard. Please grant permission or paste directly into the box.");
+    }
+  });
+}
+
+if (jsonConfirmImportBtn) {
+  jsonConfirmImportBtn.addEventListener('click', async () => {
+    const text = jsonImportText.value;
+    if (!text) return;
+    if (!confirm("Importing this semester JSON will replace your current timetable and subject list. Do you wish to proceed?")) return;
+
+    try {
+      jsonConfirmImportBtn.disabled = true;
+      jsonConfirmImportBtn.innerText = "Applying Semester Import...";
+      await importSemesterJSON(text);
+
+      alert("Semester JSON imported successfully!");
+      jsonModal.style.display = 'none';
+
+      // Refresh active view
+      if (window.renderDashboard) window.renderDashboard();
+      if (window.renderSubjects) window.renderSubjects();
+      window.location.reload();
+    } catch(err) {
+      alert("Failed to import semester JSON: " + err.message);
+      jsonConfirmImportBtn.disabled = false;
+      jsonConfirmImportBtn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> Confirm & Apply Semester Import';
+    }
   });
 }
