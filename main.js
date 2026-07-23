@@ -63,17 +63,69 @@ themeToggle.addEventListener('click', () => {
 const navItems = document.querySelectorAll('.nav-item');
 const views = document.querySelectorAll('.view');
 
+// Create M3 ripple effect inside the nav-icon-container
+function createNavRipple(e) {
+  const item = e.currentTarget;
+  const container = item.querySelector('.nav-icon-container');
+  if (!container) return;
+
+  const circle = document.createElement('span');
+  const diameter = Math.max(container.clientWidth, container.clientHeight);
+  const radius = diameter / 2;
+
+  const rect = container.getBoundingClientRect();
+  
+  let clientX = e.clientX;
+  let clientY = e.clientY;
+  
+  if (e.type && e.type.startsWith('touch')) {
+    if (e.touches && e.touches[0]) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches[0]) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    }
+  }
+
+  let left, top;
+  // If coordinates are present and not zero (programmatic clicks can yield 0, 0)
+  if (clientX !== undefined && clientY !== undefined && (clientX !== 0 || clientY !== 0)) {
+    left = clientX - rect.left - radius;
+    top = clientY - rect.top - radius;
+  } else {
+    // Default to centering within the pill container
+    left = rect.width / 2 - radius;
+    top = rect.height / 2 - radius;
+  }
+
+  circle.style.width = circle.style.height = `${diameter}px`;
+  circle.style.left = `${left}px`;
+  circle.style.top = `${top}px`;
+  circle.classList.add('nav-ripple');
+
+  const existingRipple = container.querySelector('.nav-ripple');
+  if (existingRipple) {
+    existingRipple.remove();
+  }
+
+  container.appendChild(circle);
+
+  setTimeout(() => {
+    circle.remove();
+  }, 600);
+}
+
 navItems.forEach(item => {
-  item.addEventListener('click', () => {
+  item.addEventListener('click', (e) => {
     if (!item.dataset.target) return;
     
     // Update nav state
     navItems.forEach(nav => nav.classList.remove('active'));
     item.classList.add('active');
     
-    // Add micro-animation effect
-    item.style.transform = 'scale(0.9)';
-    setTimeout(() => item.style.transform = 'scale(1)', 150);
+    // Trigger Material 3 ripple
+    createNavRipple(e);
     
     // Switch views
     views.forEach(view => view.style.display = 'none');
